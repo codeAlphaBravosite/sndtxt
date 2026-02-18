@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>TextBeam</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --border: #1e1e2e;
+  --border2: #2a2a3e;
+  --live: #a78bfa;
+  --live-dim: rgba(167,139,250,0.12);
+  --live-glow: rgba(167,139,250,0.25);
+  --text: #e8e8f0;
+  --text2: #9999bb;
+  --muted: #4a4a6a;
+  --success: #00ff9d;
+  --danger: #ff4d6d;
+  --warn: #ffb347;
+  --sent-bg: rgba(167,139,250,0.1);
+  --recv-bg: rgba(255,255,255,0.04);
+  --mono: 'Space Mono', monospace;
+  --sans: 'Syne', sans-serif;
+  --radius: 16px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+html { height: 100%; }
+body {
+  height: 100%; background: var(--bg); color: var(--text);
+  font-family: var(--mono); overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle grid bg */
+body::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(rgba(167,139,250,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(167,139,250,0.025) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+body::after {
+  content: ''; position: fixed; bottom: -20%; right: -20%; width: 50%; height: 60%;
+  background: radial-gradient(ellipse, rgba(167,139,250,0.05) 0%, transparent 65%);
+  pointer-events: none; z-index: 0;
+}
+
+/* ── APP SHELL ── */
+#app {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh;
+  max-width: 680px; margin: 0 auto;
+}
+
+/* ── HEADER ── */
+.app-header {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  padding-top: calc(12px + var(--safe-top));
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,10,15,0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.logo {
+  width: 36px; height: 36px; border-radius: 9px;
+  background: linear-gradient(135deg, var(--live), #c084fc);
+  display: grid; place-items: center; flex-shrink: 0;
+}
+.logo svg { display: block; }
+.app-title { font-family: var(--sans); font-size: clamp(1rem, 4vw, 1.2rem); font-weight: 800; letter-spacing: -0.3px; white-space: nowrap; }
+.app-title span { color: var(--live); }
+.header-status { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.status-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 100px;
+  font-size: 0.65rem; letter-spacing: 1px; text-transform: uppercase;
+  border: 1px solid var(--border);
+  background: var(--surface); color: var(--muted);
+  transition: all 0.3s; white-space: nowrap;
+  max-width: min(150px, 42vw); overflow: hidden; text-overflow: ellipsis;
+}
+.status-pill.connected { border-color: rgba(0,255,157,0.3); background: rgba(0,255,157,0.06); color: var(--success); }
+.status-pill.waiting   { border-color: rgba(255,179,71,0.3);  background: rgba(255,179,71,0.06);  color: var(--warn); }
+.status-pill.reconnecting { border-color: rgba(167,139,250,0.35); background: rgba(167,139,250,0.08); color: var(--live); }
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted); flex-shrink: 0; transition: all 0.3s;
+}
+.status-dot.connected    { background: var(--success); box-shadow: 0 0 6px var(--success); animation: pulse 2.5s infinite; }
+.status-dot.waiting      { background: var(--warn);    box-shadow: 0 0 6px var(--warn);    animation: pulse 1.4s infinite; }
+.status-dot.reconnecting { background: var(--live);    box-shadow: 0 0 6px var(--live);    animation: pulse 1s infinite; }
+.disconnect-btn {
+  padding: 4px 10px; font-size: 0.65rem; border-radius: 100px;
+  background: rgba(255,77,109,0.08); border: 1px solid rgba(255,77,109,0.2);
+  color: var(--danger); font-family: var(--mono); cursor: pointer; letter-spacing: 0.5px;
+  display: none; transition: all 0.2s; white-space: nowrap;
+}
+.disconnect-btn:hover { background: rgba(255,77,109,0.15); }
+
+/* ── SCREENS ── */
+.screen { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+.screen.active { display: flex; }
+
+/* ══════════════════════════════
+   CONNECT SCREEN
+══════════════════════════════ */
+.connect-screen {
+  justify-content: flex-start; overflow-y: auto;
+  padding: 20px 16px calc(20px + var(--safe-bottom));
+  gap: 14px;
+}
+
+/* Restore-session banner */
+.restore-banner {
+  display: none; align-items: center; gap: 10px;
+  padding: 12px 16px; border-radius: 12px;
+  background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.25);
+  font-size: 0.72rem; color: var(--text2); line-height: 1.5;
+  animation: slideUp 0.4s ease both;
+}
+.restore-banner.show { display: flex; }
+.restore-banner svg { flex-shrink: 0; color: var(--live); }
+.restore-banner-text { flex: 1; min-width: 0; }
+.restore-banner-text strong { color: var(--text); display: block; margin-bottom: 2px; }
+.restore-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.restore-btn {
+  padding: 6px 12px; border-radius: 8px; font-size: 0.65rem; font-family: var(--mono);
+  cursor: pointer; border: 1px solid; transition: all 0.15s; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.restore-btn.primary { background: var(--live); border-color: var(--live); color: #000; }
+.restore-btn.primary:hover { background: #c4b5fd; }
+.restore-btn.ghost { background: transparent; border-color: var(--border2); color: var(--text2); }
+.restore-btn.ghost:hover { border-color: var(--muted); color: var(--text); }
+
+.connect-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+  animation: slideUp 0.5s ease both; width: 100%; min-width: 0;
+}
+.connect-card:nth-child(2) { animation-delay: 0.07s; }
+.connect-card:nth-child(3) { animation-delay: 0.14s; }
+
+.card-header {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.65rem; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+}
+.card-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--live); box-shadow: 0 0 6px var(--live); flex-shrink: 0;
+}
+.card-body { padding: 16px; }
+
+/* My code */
+.my-code-display {
+  font-family: var(--sans); font-size: clamp(2rem, 11vw, 3rem); font-weight: 800;
+  letter-spacing: clamp(4px, 2vw, 8px); color: var(--text); text-align: center;
+  padding: 14px 8px 8px; cursor: pointer; transition: color 0.2s;
+  user-select: all; word-break: break-word; overflow-wrap: break-word;
+  line-height: 1.15;
+}
+.my-code-display:hover { color: var(--live); }
+.code-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+.code-actions .btn { min-width: 0; flex-shrink: 1; }
+
+/* Join */
+.join-input-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.join-input-row .btn { flex-shrink: 0; }
+.code-text-input {
+  flex: 1; padding: 14px 12px; background: var(--bg);
+  border: 1px solid var(--border2); border-radius: 10px;
+  color: var(--text); font-family: var(--sans);
+  font-size: clamp(1.1rem, 5vw, 1.5rem);
+  font-weight: 700; letter-spacing: clamp(3px, 1.5vw, 6px); text-transform: uppercase;
+  outline: none; text-align: center; min-width: 0;
+  transition: border-color 0.2s; -webkit-appearance: none;
+}
+.code-text-input:focus { border-color: var(--live); }
+.code-text-input::placeholder { font-size: 0.75rem; letter-spacing: 1px; color: var(--muted); font-family: var(--mono); font-weight: 400; }
+
+/* Error card */
+.error-card {
+  padding: 12px 16px; background: rgba(255,77,109,0.06);
+  border: 1px solid rgba(255,77,109,0.18); border-radius: 12px;
+  font-size: 0.75rem; color: var(--danger); line-height: 1.6;
+  display: none;
+}
+.error-card.show { display: block; animation: slideUp 0.3s ease both; }
+
+/* ══════════════════════════════
+   BEAM SCREEN (chat)
+══════════════════════════════ */
+.beam-screen { position: relative; }
+
+/* Reconnect banner (top of chat) */
+.reconnect-bar {
+  flex-shrink: 0; display: none; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 16px; background: rgba(167,139,250,0.08);
+  border-bottom: 1px solid rgba(167,139,250,0.2);
+  font-size: 0.7rem; color: var(--live); letter-spacing: 0.3px;
+}
+.reconnect-bar.show { display: flex; }
+.reconnect-spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(167,139,250,0.25);
+  border-top-color: var(--live);
+  animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Message list */
+.msg-list {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 14px 12px 8px;
+  display: flex; flex-direction: column; gap: 10px;
+  -webkit-overflow-scrolling: touch; scroll-behavior: smooth;
+}
+.msg-list::-webkit-scrollbar { width: 3px; }
+.msg-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Messages */
+.msg {
+  display: flex; flex-direction: column;
+  animation: msgIn 0.25s cubic-bezier(0.34,1.4,0.64,1) both;
+  max-width: 100%;
+}
+.msg.sent { align-items: flex-end; }
+.msg.recv { align-items: flex-start; }
+
+.msg-bubble {
+  max-width: 85%; border-radius: 14px; overflow: hidden; position: relative;
+}
+.msg.sent .msg-bubble { border-radius: 14px 14px 4px 14px; background: var(--sent-bg); border: 1px solid rgba(167,139,250,0.2); }
+.msg.recv .msg-bubble { border-radius: 14px 14px 14px 4px; background: var(--recv-bg); border: 1px solid var(--border); }
+
+.msg-text-container { position: relative; overflow: hidden; }
+.msg-text-container.collapsed { max-height: 120px; }
+.msg-text-container.expanded  { max-height: 360px; overflow-y: auto; }
+.msg-text-container.collapsed::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 36px;
+  pointer-events: none;
+}
+.msg.sent .msg-text-container.collapsed::after { background: linear-gradient(transparent, rgba(167,139,250,0.1)); }
+.msg.recv .msg-text-container.collapsed::after { background: linear-gradient(transparent, rgba(255,255,255,0.04)); }
+
+.msg-text {
+  padding: 11px 14px; font-size: 0.875rem; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.msg-expand-btn {
+  display: block; width: 100%; padding: 6px 14px; text-align: center;
+  font-size: 0.65rem; letter-spacing: 1px; color: var(--live);
+  cursor: pointer; background: transparent; border: none;
+  border-top: 1px solid rgba(167,139,250,0.15);
+  font-family: var(--mono); transition: background 0.2s;
+}
+.msg-expand-btn:hover { background: rgba(167,139,250,0.08); }
+
+.msg-actions {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px 8px;
+}
+.msg-meta { font-size: 0.62rem; color: var(--muted); }
+.msg-act-btn {
+  padding: 3px 9px; border-radius: 6px; font-family: var(--mono);
+  font-size: 0.65rem; cursor: pointer; border: 1px solid var(--border);
+  background: transparent; color: var(--text2); transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent; display: inline-flex; align-items: center; gap: 4px;
+}
+.msg-act-btn:hover, .msg-act-btn:active { border-color: var(--live); color: var(--live); }
+.msg.sent .msg-actions { flex-direction: row-reverse; }
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Date divider */
+.time-divider {
+  text-align: center; font-size: 0.62rem; color: var(--muted);
+  padding: 4px 0; letter-spacing: 1px; flex-shrink: 0;
+}
+
+/* Empty state */
+.beam-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; padding: 32px 24px; color: var(--muted); gap: 10px;
+}
+.beam-empty-icon { color: var(--live); opacity: 0.6; }
+.beam-empty-title { font-family: var(--sans); font-size: 1.1rem; font-weight: 700; color: var(--text2); }
+.beam-empty-sub   { font-size: 0.75rem; line-height: 1.7; max-width: 240px; }
+
+/* ── COMPOSE BAR ── */
+.compose-bar {
+  flex-shrink: 0; padding: 10px 12px;
+  padding-bottom: calc(10px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: rgba(10,10,15,0.95);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+.compose-inner { display: flex; gap: 8px; align-items: flex-end; }
+.compose-textarea {
+  flex: 1; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 11px 14px;
+  font-family: var(--mono); font-size: 0.88rem; color: var(--text);
+  resize: none; outline: none; line-height: 1.6;
+  max-height: 140px; min-height: 44px;
+  transition: border-color 0.2s; -webkit-appearance: none;
+}
+.compose-textarea:focus { border-color: var(--live); }
+.compose-textarea::placeholder { color: var(--muted); }
+.compose-send-btn {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  background: var(--live); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.18s; -webkit-tap-highlight-color: transparent;
+  align-self: flex-end;
+}
+.compose-send-btn:hover  { background: #c4b5fd; transform: scale(1.04); }
+.compose-send-btn:active { transform: scale(0.96); }
+.compose-send-btn:disabled { background: var(--muted); opacity: 0.5; cursor: not-allowed; transform: none; }
+.compose-send-btn svg { transition: transform 0.15s; }
+.compose-send-btn:not(:disabled):active svg { transform: scale(0.85) rotate(-10deg); }
+
+.compose-toolbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 2px 0; flex-wrap: wrap;
+}
+.compose-count { font-size: 0.65rem; color: var(--muted); }
+.compose-count.warn   { color: var(--warn); }
+.compose-count.danger { color: var(--danger); }
+.compose-tool-btn {
+  padding: 4px 10px; border-radius: 6px; font-family: var(--mono);
+  font-size: 0.65rem; cursor: pointer; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.compose-tool-btn:hover, .compose-tool-btn:active { border-color: var(--live); color: var(--live); }
+.compose-tool-btn svg { flex-shrink: 0; }
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 11px 18px; border: none; border-radius: 10px;
+  font-family: var(--mono); font-size: 0.78rem; font-weight: 700;
+  cursor: pointer; transition: all 0.18s; letter-spacing: 0.3px;
+  display: inline-flex; align-items: center; gap: 7px;
+  white-space: nowrap; -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.btn-live  { background: var(--live); color: #000; }
+.btn-live:hover  { background: #c4b5fd; transform: translateY(-1px); box-shadow: 0 6px 20px var(--live-glow); }
+.btn-live:active { transform: scale(0.97); }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border2); }
+.btn-ghost:hover  { border-color: var(--live); color: var(--live); }
+.btn-ghost:active { transform: scale(0.97); }
+.btn-sm   { padding: 9px 14px; font-size: 0.72rem; }
+.btn-full { width: 100%; justify-content: center; }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed; left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  bottom: calc(20px + var(--safe-bottom));
+  background: var(--success); color: #000;
+  padding: 10px 22px; border-radius: 100px;
+  font-size: 0.78rem; font-weight: 700;
+  z-index: 9999; transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+  pointer-events: none; white-space: nowrap; max-width: 90vw;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.err  { background: var(--danger); color: #fff; }
+.toast.live-t { background: var(--live); color: #000; }
+.toast.warn-t { background: var(--warn); color: #000; }
+
+/* ── DRAG OVERLAY ── */
+.drag-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(167,139,250,0.06); border: 3px dashed var(--live);
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; font-family: var(--sans); color: var(--live);
+  backdrop-filter: blur(8px); font-weight: 800; text-align: center; padding: 24px;
+}
+.drag-overlay.show { display: flex; }
+.drag-overlay-label { font-size: 1.2rem; letter-spacing: 0.5px; }
+
+/* ── HISTORY DRAWER ── */
+.history-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  display: none; align-items: flex-end;
+}
+.history-overlay.show { display: flex; animation: fadeOverlay 0.2s ease; }
+@keyframes fadeOverlay { from { opacity: 0; } to { opacity: 1; } }
+
+.history-drawer {
+  width: 100%; background: var(--surface); border-radius: 20px 20px 0 0;
+  border: 1px solid var(--border); border-bottom: none;
+  max-height: 80vh; display: flex; flex-direction: column;
+  animation: drawerUp 0.3s cubic-bezier(0.34,1.2,0.64,1) both;
+}
+@keyframes drawerUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+.drawer-handle { width: 40px; height: 4px; border-radius: 2px; background: var(--border2); margin: 12px auto 0; flex-shrink: 0; }
+.drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.drawer-title    { font-family: var(--sans); font-size: 1rem; font-weight: 700; }
+.drawer-subtitle { font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+.drawer-list { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+
+.hist-item { border-bottom: 1px solid var(--border); padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+.hist-item:last-child { border-bottom: none; }
+.hist-item-header { display: flex; align-items: center; gap: 8px; }
+.hist-badge {
+  font-size: 0.58rem; padding: 2px 7px; border-radius: 100px; letter-spacing: 1px; text-transform: uppercase;
+}
+.hist-badge.sent { background: var(--live-dim); color: var(--live); }
+.hist-badge.recv { background: rgba(255,255,255,0.06); color: var(--text2); }
+.hist-time  { font-size: 0.62rem; color: var(--muted); }
+.hist-chars { font-size: 0.62rem; color: var(--muted); margin-left: auto; }
+.hist-preview {
+  font-size: 0.8rem; color: var(--text2); line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 72px; overflow: hidden; position: relative;
+}
+.hist-preview::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 28px;
+  background: linear-gradient(transparent, var(--surface));
+}
+.hist-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.hist-act {
+  padding: 6px 12px; border-radius: 8px; font-family: var(--mono); font-size: 0.68rem;
+  cursor: pointer; border: 1px solid var(--border); background: transparent;
+  color: var(--text2); transition: all 0.15s; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.hist-act:hover, .hist-act:active { border-color: var(--live); color: var(--live); }
+.hist-act.danger { color: var(--danger) !important; }
+.hist-act.danger:hover { border-color: var(--danger) !important; }
+.hist-empty { padding: 40px 24px; text-align: center; font-size: 0.78rem; color: var(--muted); }
+
+@keyframes slideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse   { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ── SMALL SCREEN SAFETY ── */
+@media (max-width: 360px) {
+  .connect-screen { padding: 14px 12px calc(14px + var(--safe-bottom)); gap: 12px; }
+  .card-body { padding: 12px; }
+  .my-code-display { font-size: clamp(1.6rem, 13vw, 2.2rem); letter-spacing: clamp(2px, 1.5vw, 6px); }
+  .code-text-input { font-size: clamp(1rem, 6vw, 1.3rem); letter-spacing: 3px; padding: 12px 8px; }
+  .btn { padding: 10px 14px; font-size: 0.72rem; }
+  .app-header { padding: 8px 12px; padding-top: calc(8px + var(--safe-top)); gap: 8px; }
+  .logo { width: 30px; height: 30px; }
+  .compose-bar { padding: 8px 10px; padding-bottom: calc(8px + var(--safe-bottom)); }
+  .compose-tool-btn { padding: 4px 8px; font-size: 0.6rem; }
+  .msg-list { padding: 10px 8px 6px; }
+  .msg-bubble { max-width: 92%; }
+  .hist-item { padding: 12px 14px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Drag overlay -->
+<div class="drag-overlay" id="drag-overlay">
+  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+  <span class="drag-overlay-label">Drop text file to load</span>
+</div>
+
+<!-- History drawer -->
+<div class="history-overlay" id="hist-overlay" onclick="if(event.target===this)closeHistory()">
+  <div class="history-drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+      <div>
+        <div class="drawer-title">History <span id="hist-count-lbl" style="font-size:0.8rem;color:var(--muted);font-weight:400"></span></div>
+        <div class="drawer-subtitle">Auto-clears after 24h</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="hist-act danger" onclick="clearAllHistory()" style="font-size:0.65rem">Clear all</button>
+        <button class="hist-act" onclick="closeHistory()">&#x2715; Close</button>
+      </div>
+    </div>
+    <div class="drawer-list" id="hist-list"></div>
+  </div>
+</div>
+
+<div id="app">
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+      </svg>
+    </div>
+    <div class="app-title">Text<span>Beam</span></div>
+    <div class="header-status">
+      <div class="status-pill" id="status-pill">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-txt">Offline</span>
+      </div>
+      <button class="disconnect-btn" id="disconnect-btn" onclick="liveDisconnect()">Leave</button>
+    </div>
+  </header>
+
+  <!-- ══ CONNECT SCREEN ══ -->
+  <div class="screen connect-screen active" id="connect-screen">
+
+    <!-- Session restore banner (shown if a previous session is found) -->
+    <div class="restore-banner" id="restore-banner">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/><polyline points="12 7 12 12 15 15"/>
+      </svg>
+      <div class="restore-banner-text">
+        <strong id="restore-title">Restore last session?</strong>
+        <span id="restore-desc">Reconnecting to previous room…</span>
+      </div>
+      <div class="restore-actions">
+        <button class="restore-btn primary" id="restore-yes-btn">Reconnect</button>
+        <button class="restore-btn ghost" onclick="dismissRestore()">Dismiss</button>
+      </div>
+    </div>
+
+    <!-- My Code Card -->
+    <div class="connect-card">
+      <div class="card-header">
+        <div class="card-dot"></div>
+        Your room code
+      </div>
+      <div class="card-body">
+        <div class="my-code-display" id="my-code-display" onclick="copyCode()" title="Tap to copy">------</div>
+        <div class="code-actions">
+          <button class="btn btn-live" id="host-btn" onclick="startHosting()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+            </svg>
+            Start Hosting
+          </button>
+          <button class="btn btn-ghost" onclick="newCode()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/>
+              <polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            New Code
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Join Card -->
+    <div class="connect-card">
+      <div class="card-header">
+        <div class="card-dot" style="background:rgba(167,139,250,0.5);box-shadow:none"></div>
+        Join a room
+      </div>
+      <div class="card-body">
+        <div class="join-input-row">
+          <input class="code-text-input" id="join-input" type="text" maxlength="8"
+            inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
+            placeholder="ENTER CODE"
+            oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+            onkeydown="if(event.key==='Enter')joinRoom()">
+          <button class="btn btn-live" id="join-btn" onclick="joinRoom()">
+            Join
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error card -->
+    <div class="error-card" id="error-card"></div>
+
+  </div><!-- /connect-screen -->
+
+  <!-- ══ BEAM SCREEN ══ -->
+  <div class="screen beam-screen" id="beam-screen">
+
+    <!-- Reconnect status bar -->
+    <div class="reconnect-bar" id="reconnect-bar">
+      <div class="reconnect-spinner"></div>
+      <span id="reconnect-bar-txt">Reconnecting…</span>
+    </div>
+
+    <!-- Messages -->
+    <div class="msg-list" id="msg-list">
+      <div class="beam-empty" id="beam-empty">
+        <div class="beam-empty-icon">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+        </div>
+        <div class="beam-empty-title">Connected!</div>
+        <div class="beam-empty-sub">Type or paste below and send. Both sides can beam.</div>
+      </div>
+    </div>
+
+    <!-- Compose bar -->
+    <div class="compose-bar">
+      <div class="compose-inner">
+        <textarea class="compose-textarea" id="compose-textarea"
+          placeholder="Type or paste text to beam…"
+          rows="1"
+          oninput="onComposeInput()"
+          onkeydown="handleComposeKey(event)"></textarea>
+        <button class="compose-send-btn" id="send-btn" onclick="beamText()" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="compose-toolbar">
+        <span class="compose-count" id="compose-count"></span>
+        <button class="compose-tool-btn" onclick="clearCompose()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Clear
+        </button>
+        <button class="compose-tool-btn" onclick="pasteFromClipboard()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+          </svg>
+          Paste
+        </button>
+        <button class="compose-tool-btn" onclick="openHistory()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          History
+        </button>
+        <button class="compose-tool-btn" onclick="downloadLastReceived()" id="save-btn" style="display:none">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Save
+        </button>
+      </div>
+    </div>
+  </div><!-- /beam-screen -->
+
+</div><!-- /app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ════════════════════════════════
+   HISTORY  (localStorage, 24h TTL)
+════════════════════════════════ */
+const HIST_KEY = 'tb_hist_v3', MAX_HIST = 20, HIST_TTL = 864e5;
+const hMap = {};
+
+function histLoad() {
+  try {
+    const r = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+    return Array.isArray(r) ? r.filter(i => i && Date.now() - i.ts < HIST_TTL) : [];
+  } catch(e) { return []; }
+}
+function histSave(arr) {
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(arr.slice(0, MAX_HIST))); } catch(e) {}
+}
+function histAdd(text, dir) {
+  const items = histLoad();
+  if (items[0] && items[0].text === text && Date.now() - items[0].ts < 4000) return items[0].id;
+  const id = 'h' + Date.now() + Math.random().toString(36).slice(2,5);
+  histSave([{ id, text, ts: Date.now(), dir: dir || 'recv' }, ...items]);
+  hMap[id] = text;
+  return id;
+}
+function histDeleteItem(id) {
+  histSave(histLoad().filter(i => i.id !== id));
+  delete hMap[id];
+  renderHistory();
+}
+function clearAllHistory() {
+  if (!confirm('Delete all history?')) return;
+  try { localStorage.removeItem(HIST_KEY); } catch(e) {}
+  Object.keys(hMap).forEach(k => delete hMap[k]);
+  renderHistory();
+  toast('History cleared');
+}
+function renderHistory() {
+  const items = histLoad();
+  const list = document.getElementById('hist-list');
+  const lbl  = document.getElementById('hist-count-lbl');
+  lbl.textContent = items.length ? `(${items.length})` : '';
+  items.forEach(i => { hMap[i.id] = i.text; });
+  if (!items.length) {
+    list.innerHTML = '<div class="hist-empty">No history yet. Received texts will appear here.</div>';
+    return;
+  }
+  list.innerHTML = items.map(item => {
+    const isSent = item.dir === 'sent';
+    const age = formatAge(Date.now() - item.ts);
+    return `
+      <div class="hist-item">
+        <div class="hist-item-header">
+          <span class="hist-badge ${isSent ? 'sent' : 'recv'}">${isSent ? '&#x2191; Sent' : '&#x2193; Recv'}</span>
+          <span class="hist-time">${age}</span>
+          <span class="hist-chars">${item.text.length.toLocaleString()} chars</span>
+        </div>
+        <div class="hist-preview">${escHtml(item.text)}</div>
+        <div class="hist-actions">
+          <button class="hist-act" onclick="doClipboard(hMap['${esc(item.id)}'],'Copied!')">Copy</button>
+          <button class="hist-act" onclick="loadIntoCompose('${esc(item.id)}')">&#x2191; Load</button>
+          <button class="hist-act" onclick="downloadText(hMap['${esc(item.id)}'],'textbeam.txt')">&#x2193; Save</button>
+          <button class="hist-act danger" onclick="histDeleteItem('${esc(item.id)}')">&#x2715;</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+function openHistory()  { renderHistory(); document.getElementById('hist-overlay').classList.add('show'); }
+function closeHistory() { document.getElementById('hist-overlay').classList.remove('show'); }
+function loadIntoCompose(id) {
+  const text = hMap[id];
+  if (!text) return;
+  document.getElementById('compose-textarea').value = text;
+  onComposeInput();
+  closeHistory();
+  toast('Loaded into compose');
+}
+
+let lastReceivedText = '';
+
+/* ════════════════════════════════
+   SESSION PERSISTENCE
+════════════════════════════════ */
+const SESSION_KEY = 'tb_session_v1';
+const SESSION_TTL = 30 * 60 * 1000; // 30 minutes
+
+function saveSession(sessionRole, code) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ role: sessionRole, code, ts: Date.now() })); } catch(e) {}
+}
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    if (!s || Date.now() - s.ts > SESSION_TTL) { clearSession(); return null; }
+    return s;
+  } catch(e) { return null; }
+}
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+}
+
+/* ════════════════════════════════
+   P2P — PeerJS
+════════════════════════════════ */
+const PEER_PFX = 'tbv4-';
+let peer = null, conn = null, myCode = null, role = 'idle';
+
+// Reconnect state
+let intentionalDisconnect = false;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let activeJoinCode = null; // code we're currently joined to (for reconnect)
+const MAX_RECONNECT = 6;
+const RECONNECT_DELAYS = [2000, 3000, 5000, 8000, 13000, 21000]; // progressive back-off
+
+function genCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+function loadMyCode() { try { return localStorage.getItem('tb_code_v4') || null; } catch(e) { return null; } }
+function saveMyCode(c) { try { localStorage.setItem('tb_code_v4', c); } catch(e) {} }
+function displayCode(code) {
+  document.getElementById('my-code-display').textContent = code.slice(0,3) + '\u2009' + code.slice(3);
+}
+
+function newCode() {
+  if (role === 'hosting' || role === 'connected') {
+    if (!confirm('Generate a new code? This will disconnect the current session.')) return;
+    liveDisconnect(true);
+  }
+  myCode = genCode(); saveMyCode(myCode); displayCode(myCode);
+  toast('New code generated');
+}
+function copyCode() {
+  if (myCode) doClipboard(myCode, 'Code copied!');
+}
+
+/* ── HOSTING ── */
+function startHosting() {
+  if (!window.Peer) { showError('PeerJS failed to load. Check your internet connection and refresh.'); return; }
+  if (peer) { peer.destroy(); peer = null; conn = null; }
+  intentionalDisconnect = false;
+
+  const btn = document.getElementById('host-btn');
+  btn.disabled = true; btn.textContent = 'Hosting…';
+  setStatus('waiting', 'Waiting…');
+  hideError();
+
+  const peerId = PEER_PFX + myCode.toLowerCase();
+  try { peer = new Peer(peerId); } catch(e) { showError('Could not start: ' + e.message); resetHostBtn(); return; }
+
+  peer.on('open', () => {
+    role = 'hosting';
+    setStatus('waiting', 'Hosting · waiting…');
+  });
+
+  peer.on('connection', incoming => {
+    if (conn) conn.close();
+    conn = incoming;
+    role = 'connected';
+    setupConn(conn, 'host');
+  });
+
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id') {
+      myCode = genCode(); saveMyCode(myCode); displayCode(myCode);
+      showError('That code was taken — a new one was generated. Try hosting again.');
+    } else if (err.type === 'network' || err.type === 'server-error') {
+      showError('Cannot reach the signaling server. Check your internet connection.');
+    } else {
+      showError('Error (' + err.type + '): ' + (err.message || 'Unknown'));
+    }
+    resetHostBtn(); role = 'idle'; setStatus('idle', 'Offline');
+  });
+
+  // Auto-reconnect to signaling server if we drop from it (keeps hosting alive)
+  peer.on('disconnected', () => {
+    if (peer && !peer.destroyed && !intentionalDisconnect) peer.reconnect();
+  });
+}
+
+/* ── JOINING ── */
+function joinRoom() {
+  const raw = document.getElementById('join-input').value.trim().replace(/\s/g,'').toUpperCase();
+  if (raw.length < 4) { toast('Enter a valid room code', true); return; }
+  doJoin(raw, false);
+}
+
+function doJoin(raw, isReconnect) {
+  if (!window.Peer) { showError('PeerJS failed to load. Check your connection and refresh.'); return; }
+  if (peer) { peer.destroy(); peer = null; conn = null; }
+  intentionalDisconnect = false;
+
+  if (!isReconnect) {
+    reconnectAttempts = 0;
+    activeJoinCode = raw;
+  }
+
+  const btn = document.getElementById('join-btn');
+  if (btn) { btn.disabled = true; }
+
+  if (!isReconnect) {
+    setStatus('waiting', 'Connecting…');
+    hideError();
+    role = 'joining';
+  } else {
+    showReconnectBar('Reconnecting… (' + reconnectAttempts + '/' + MAX_RECONNECT + ')');
+  }
+
+  try { peer = new Peer(); } catch(e) {
+    if (isReconnect) scheduleReconnect(raw);
+    else { showError('Could not connect: ' + e.message); resetJoinBtn(); }
+    return;
+  }
+
+  peer.on('open', () => {
+    const c = peer.connect(PEER_PFX + raw.toLowerCase(), { reliable: true, serialization: 'json' });
+    conn = c;
+    setupConn(c, 'joiner');
+
+    const timeout = setTimeout(() => {
+      if (role === 'joining') {
+        if (isReconnect) {
+          scheduleReconnect(raw);
+        } else {
+          showError('Room "' + raw + '" not found or timed out. Check the code and make sure the host is active.');
+          peer.destroy(); peer = null; conn = null; role = 'idle';
+          resetJoinBtn(); setStatus('idle', 'Offline');
+        }
+      }
+    }, 14000);
+    c.on('open', () => clearTimeout(timeout));
+  });
+
+  peer.on('error', err => {
+    if (isReconnect) {
+      scheduleReconnect(raw);
+    } else {
+      if (err.type === 'peer-unavailable') showError('Room "' + raw + '" not found. Check the code and make sure the host is running.');
+      else if (err.type === 'network' || err.type === 'server-error') showError('Cannot reach the server. Check your internet connection.');
+      else showError('Could not connect: ' + (err.message || err.type));
+      role = 'idle'; resetJoinBtn(); setStatus('idle', 'Offline');
+    }
+  });
+}
+
+function scheduleReconnect(code) {
+  if (intentionalDisconnect) return;
+  if (reconnectAttempts >= MAX_RECONNECT) {
+    hideReconnectBar();
+    setStatus('idle', 'Offline');
+    showConnectScreen();
+    toast('Could not reconnect. Host may be offline.', true);
+    clearSession();
+    resetJoinBtn();
+    return;
+  }
+  const delay = RECONNECT_DELAYS[Math.min(reconnectAttempts, RECONNECT_DELAYS.length - 1)];
+  reconnectAttempts++;
+  showReconnectBar('Reconnecting in ' + Math.round(delay/1000) + 's… (' + reconnectAttempts + '/' + MAX_RECONNECT + ')');
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    if (!intentionalDisconnect) doJoin(code, true);
+  }, delay);
+}
+
+/* ── CONNECTION SETUP ── */
+function setupConn(c, myRole) {
+  c.on('open', () => {
+    role = 'connected';
+    reconnectAttempts = 0;
+    clearTimeout(reconnectTimer);
+    hideReconnectBar();
+    setStatus('connected', 'Connected');
+    showBeamScreen();
+    toast('Connected!', 'live');
+    resetHostBtn(); resetJoinBtn();
+    // Persist session
+    if (myRole === 'joiner') saveSession('joining', activeJoinCode);
+    else saveSession('hosting', myCode);
+  });
+
+  c.on('data', data => {
+    if (!data || data.type !== 'text') return;
+    appendMsg(data.text, 'recv', data.ts || Date.now());
+    histAdd(data.text, 'recv');
+    lastReceivedText = data.text;
+    document.getElementById('save-btn').style.display = 'inline-flex';
+    toast('Text received!', 'live');
+  });
+
+  c.on('close', () => {
+    conn = null;
+    if (myRole === 'host') {
+      role = 'hosting';
+      setStatus('waiting', 'Guest left · waiting…');
+    } else {
+      // Joiner: attempt auto-reconnect
+      if (!intentionalDisconnect && activeJoinCode) {
+        role = 'joining';
+        setStatus('reconnecting', 'Reconnecting…');
+        showReconnectBar('Connection lost. Reconnecting…');
+        scheduleReconnect(activeJoinCode);
+      } else {
+        role = 'idle'; setStatus('idle', 'Offline'); showConnectScreen();
+      }
+    }
+    if (intentionalDisconnect) toast('Disconnected');
+    else toast('Connection lost', true);
+  });
+
+  c.on('error', e => {
+    setStatus('idle', 'Error');
+    toast('Connection error: ' + e.message, true);
+  });
+}
+
+/* ── SEND ── */
+function beamText() {
+  const text = document.getElementById('compose-textarea').value;
+  if (!text.trim()) return;
+  if (!conn || !conn.open) { toast('Not connected', true); return; }
+  try {
+    conn.send({ type: 'text', text, ts: Date.now() });
+    appendMsg(text, 'sent', Date.now());
+    histAdd(text, 'sent');
+    document.getElementById('compose-textarea').value = '';
+    onComposeInput();
+    toast('Beamed!', 'live');
+  } catch(e) { toast('Send failed: ' + e.message, true); }
+}
+
+/* ── DISCONNECT ── */
+function liveDisconnect(silent) {
+  intentionalDisconnect = true;
+  clearTimeout(reconnectTimer);
+  hideReconnectBar();
+  if (peer && !peer.destroyed) peer.destroy();
+  peer = null; conn = null; role = 'idle';
+  activeJoinCode = null;
+  reconnectAttempts = 0;
+  clearSession();
+  setStatus('idle', 'Offline');
+  showConnectScreen();
+  if (!silent) toast('Disconnected');
+  resetHostBtn(); resetJoinBtn();
+}
+
+/* ── RECONNECT BAR ── */
+function showReconnectBar(msg) {
+  const bar = document.getElementById('reconnect-bar');
+  document.getElementById('reconnect-bar-txt').textContent = msg || 'Reconnecting…';
+  bar.classList.add('show');
+}
+function hideReconnectBar() {
+  document.getElementById('reconnect-bar').classList.remove('show');
+}
+
+/* ── RESET BUTTONS ── */
+function resetHostBtn() {
+  const btn = document.getElementById('host-btn');
+  btn.disabled = false;
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg> Start Hosting`;
+}
+function resetJoinBtn() {
+  const btn = document.getElementById('join-btn');
+  btn.disabled = false;
+  btn.innerHTML = `Join <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`;
+}
+
+/* ════════════════════════════════
+   SESSION RESTORE BANNER
+════════════════════════════════ */
+function showRestoreBanner(session) {
+  const banner = document.getElementById('restore-banner');
+  const title  = document.getElementById('restore-title');
+  const desc   = document.getElementById('restore-desc');
+  const yesBtn = document.getElementById('restore-yes-btn');
+
+  if (session.role === 'joining') {
+    title.textContent = 'Resume last session?';
+    desc.textContent  = 'Reconnect to room ' + session.code.slice(0,3) + ' ' + session.code.slice(3);
+    yesBtn.onclick = () => { banner.classList.remove('show'); doJoin(session.code, false); };
+  } else {
+    title.textContent = 'Resume hosting?';
+    desc.textContent  = 'Re-open your room ' + myCode.slice(0,3) + ' ' + myCode.slice(3);
+    yesBtn.onclick = () => { banner.classList.remove('show'); startHosting(); };
+  }
+  banner.classList.add('show');
+}
+function dismissRestore() {
+  document.getElementById('restore-banner').classList.remove('show');
+  clearSession();
+}
+
+/* ════════════════════════════════
+   UI — MESSAGES
+════════════════════════════════ */
+let msgCount = 0;
+
+function appendMsg(text, dir, ts) {
+  const list  = document.getElementById('msg-list');
+  const empty = document.getElementById('beam-empty');
+  if (empty) empty.remove();
+
+  const id      = 'msg' + (++msgCount);
+  const timeStr = new Date(ts || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const isSent  = dir === 'sent';
+  const isLong  = text.length > 300 || (text.match(/\n/g) || []).length > 6;
+
+  const div = document.createElement('div');
+  div.className = 'msg ' + (isSent ? 'sent' : 'recv');
+  div.id = id;
+
+  const copyIcon    = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  const saveIcon    = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+  const editIcon    = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+
+  div.innerHTML = `
+    <div class="msg-bubble">
+      <div class="msg-text-container${isLong ? ' collapsed' : ''}" id="tc-${id}">
+        <div class="msg-text">${escHtml(text)}</div>
+      </div>
+      ${isLong ? `<button class="msg-expand-btn" id="eb-${id}" onclick="toggleMsgExpand('${id}')">Show more &#x2193;</button>` : ''}
+      <div class="msg-actions">
+        <span class="msg-meta">${timeStr} · ${text.length.toLocaleString()} chars</span>
+        <button class="msg-act-btn" onclick="doClipboard(getMsgText('${id}'),'Copied!')">${copyIcon} Copy</button>
+        <button class="msg-act-btn" onclick="downloadText(getMsgText('${id}'),'textbeam-${isSent?'sent':'received'}.txt')">${saveIcon} Save</button>
+        ${isSent ? '' : `<button class="msg-act-btn" onclick="loadMsgIntoCompose('${id}')">${editIcon} Edit</button>`}
+      </div>
+    </div>`;
+
+  list.appendChild(div);
+  requestAnimationFrame(() => list.scrollTop = list.scrollHeight);
+}
+
+function getMsgText(id) {
+  const el = document.getElementById(id);
+  return el ? el.querySelector('.msg-text').textContent : '';
+}
+function toggleMsgExpand(id) {
+  const tc  = document.getElementById('tc-' + id);
+  const btn = document.getElementById('eb-' + id);
+  if (!tc || !btn) return;
+  const col = tc.classList.contains('collapsed');
+  tc.classList.toggle('collapsed', !col);
+  tc.classList.toggle('expanded', col);
+  btn.innerHTML = col ? 'Show less &#x2191;' : 'Show more &#x2193;';
+}
+function loadMsgIntoCompose(id) {
+  const text = getMsgText(id);
+  if (!text) return;
+  document.getElementById('compose-textarea').value = text;
+  onComposeInput();
+  document.getElementById('compose-textarea').focus();
+  toast('Loaded into compose');
+}
+
+/* ════════════════════════════════
+   COMPOSE
+════════════════════════════════ */
+function onComposeInput() {
+  const ta   = document.getElementById('compose-textarea');
+  const text = ta.value;
+  const len  = text.length;
+
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
+
+  const countEl = document.getElementById('compose-count');
+  if (len > 0) {
+    const wc = text.trim().split(/\s+/).filter(Boolean).length;
+    countEl.textContent = len.toLocaleString() + ' chars · ' + wc + ' words';
+    countEl.className = 'compose-count' + (len > 5000 ? ' danger' : len > 2500 ? ' warn' : '');
+  } else {
+    countEl.textContent = '';
+  }
+
+  document.getElementById('send-btn').disabled = !text.trim() || !conn || !conn.open;
+}
+
+function handleComposeKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 600) {
+    e.preventDefault(); beamText();
+  }
+}
+function clearCompose() {
+  document.getElementById('compose-textarea').value = '';
+  onComposeInput();
+}
+async function pasteFromClipboard() {
+  if (!navigator.clipboard?.readText) { toast('Paste manually into the text field', true); return; }
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text.trim()) { toast('Clipboard is empty', true); return; }
+    document.getElementById('compose-textarea').value = text;
+    onComposeInput();
+    toast('Pasted!');
+  } catch(e) { toast('Clipboard permission denied — paste manually', true); }
+}
+function downloadLastReceived() {
+  if (lastReceivedText) downloadText(lastReceivedText, 'textbeam-received.txt');
+}
+
+/* ════════════════════════════════
+   SCREEN SWITCHING
+════════════════════════════════ */
+function showBeamScreen() {
+  document.getElementById('connect-screen').classList.remove('active');
+  document.getElementById('beam-screen').classList.add('active');
+  document.getElementById('disconnect-btn').style.display = 'inline-flex';
+  setTimeout(() => document.getElementById('compose-textarea').focus(), 300);
+}
+function showConnectScreen() {
+  document.getElementById('beam-screen').classList.remove('active');
+  document.getElementById('connect-screen').classList.add('active');
+  document.getElementById('disconnect-btn').style.display = 'none';
+}
+
+/* ════════════════════════════════
+   STATUS
+════════════════════════════════ */
+function setStatus(state, msg) {
+  const pill = document.getElementById('status-pill');
+  const dot  = document.getElementById('status-dot');
+  const txt  = document.getElementById('status-txt');
+  const cls  = state === 'connected' ? 'connected' : state === 'waiting' ? 'waiting' : state === 'reconnecting' ? 'reconnecting' : '';
+  pill.className = 'status-pill ' + cls;
+  dot.className  = 'status-dot '  + state;
+  txt.textContent = msg;
+}
+
+/* ════════════════════════════════
+   ERROR
+════════════════════════════════ */
+function showError(msg) {
+  const el = document.getElementById('error-card');
+  el.textContent = msg; el.classList.add('show');
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function hideError() { document.getElementById('error-card').classList.remove('show'); }
+
+/* ════════════════════════════════
+   UTILITIES
+════════════════════════════════ */
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  const cls = type === 'live' ? ' live-t' : type === true ? ' err' : type === 'warn' ? ' warn-t' : '';
+  el.className = 'toast' + cls;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2600);
+}
+function doClipboard(text, msg) {
+  if (!text) return;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast(msg)).catch(() => { legacyCopy(text); toast(msg); });
+  } else { legacyCopy(text); toast(msg); }
+}
+function legacyCopy(text) {
+  const ta = Object.assign(document.createElement('textarea'), {
+    value: text, style: 'position:fixed;top:-9999px;left:-9999px;opacity:0'
+  });
+  document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+}
+function downloadText(text, name) {
+  if (!text) return;
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' })),
+    download: name
+  });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('Saved!');
+}
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+function esc(s) { return String(s).replace(/['"\\<>]/g, ''); }
+function formatAge(ms) {
+  const s = Math.floor(ms/1000); if (s < 60) return 'just now';
+  const m = Math.floor(s/60);   if (m < 60) return m + 'm ago';
+  const h = Math.floor(m/60);   if (h < 24) return h + 'h ago';
+  return Math.floor(h/24) + 'd ago';
+}
+
+/* ════════════════════════════════
+   DRAG & DROP text files
+════════════════════════════════ */
+let dragCount = 0;
+document.addEventListener('dragenter', e => {
+  if ([...e.dataTransfer.types].includes('Files')) { dragCount++; document.getElementById('drag-overlay').classList.add('show'); }
+});
+document.addEventListener('dragleave', () => {
+  if (--dragCount <= 0) { dragCount = 0; document.getElementById('drag-overlay').classList.remove('show'); }
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault(); dragCount = 0; document.getElementById('drag-overlay').classList.remove('show');
+  const file = e.dataTransfer.files?.[0]; if (!file) return;
+  const ok = file.type.startsWith('text/') || /\.(txt|md|csv|json|xml|html|css|js|ts|py|sh|log)$/i.test(file.name);
+  if (!ok) { toast('Only text files supported', true); return; }
+  const reader = new FileReader();
+  reader.onload = ev => { document.getElementById('compose-textarea').value = ev.target.result; onComposeInput(); toast('File loaded!'); };
+  reader.onerror = () => toast('Could not read file', true);
+  reader.readAsText(file);
+});
+
+/* ════════════════════════════════
+   KEYBOARD
+════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('hist-overlay').classList.contains('show')) closeHistory();
+});
+
+/* ════════════════════════════════
+   CLEANUP
+════════════════════════════════ */
+window.addEventListener('beforeunload', () => {
+  if (peer && !peer.destroyed) peer.destroy();
+});
+document.addEventListener('visibilitychange', () => {
+  const btn = document.getElementById('send-btn');
+  if (btn) btn.disabled = !document.getElementById('compose-textarea').value.trim() || !conn || !conn.open;
+});
+
+/* ════════════════════════════════
+   INIT
+════════════════════════════════ */
+(function init() {
+  myCode = loadMyCode();
+  if (!myCode) { myCode = genCode(); saveMyCode(myCode); }
+  displayCode(myCode);
+  setStatus('idle', 'Offline');
+  renderHistory();
+
+  // Check for a saved session and offer restore
+  const session = loadSession();
+  if (session) showRestoreBanner(session);
+})();
+</script>
+</body>
+</html>
