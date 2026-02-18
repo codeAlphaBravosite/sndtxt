@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TextBeam — Share Text Instantly</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --border: #1e1e2e;
+  --border2: #252535;
+  --accent: #00e5ff;
+  --accent2: #ff3cac;
+  --live: #a78bfa;
+  --text: #e8e8f0;
+  --muted: #555570;
+  --success: #00ff9d;
+  --danger: #ff4d6d;
+  --warn: #ffb347;
+  --mono: 'Space Mono', monospace;
+  --sans: 'Syne', sans-serif;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--mono); overflow-x: hidden; }
+body::before {
+  content: ''; position: fixed; inset: 0;
+  background-image: linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px; pointer-events: none; z-index: 0;
+}
+body::after {
+  content: ''; position: fixed; top: -50%; left: -20%; width: 60%; height: 70%;
+  background: radial-gradient(ellipse, rgba(0,229,255,0.04) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.container { position: relative; z-index: 1; max-width: 780px; margin: 0 auto; padding: 40px 24px 100px; min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ── Header ── */
+header { display: flex; align-items: center; gap: 16px; margin-bottom: 44px; animation: slideDown 0.6s ease both; }
+.logo { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; position: relative; overflow: hidden; }
+.logo::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.logo svg { position: relative; z-index: 1; }
+h1 { font-family: var(--sans); font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; }
+h1 span { color: var(--accent); }
+.tagline { font-size: 0.7rem; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+
+.no-server-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(0,255,157,0.08); border: 1px solid rgba(0,255,157,0.2);
+  color: var(--success); font-size: 0.65rem; letter-spacing: 1.5px; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 100px; margin-bottom: 24px;
+  animation: slideDown 0.5s 0.05s ease both; opacity: 0;
+}
+.bdot { width: 7px; height: 7px; background: var(--success); border-radius: 50%; display: inline-block; box-shadow: 0 0 6px var(--success); }
+
+/* ── Mode toggle ── */
+.mode-toggle {
+  display: flex; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 4px; margin-bottom: 22px;
+  animation: slideDown 0.6s 0.1s ease both; opacity: 0;
+}
+.mode-btn {
+  flex: 1; padding: 10px 12px; border: none; background: transparent; color: var(--muted);
+  font-family: var(--mono); font-size: 0.75rem; cursor: pointer; border-radius: 7px;
+  transition: all 0.2s; letter-spacing: 0.3px;
+}
+.mode-btn.active { background: var(--accent); color: #000; font-weight: 700; }
+.mode-btn.active.live-mode { background: var(--live); }
+
+/* ── Panel ── */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; animation: slideDown 0.6s 0.2s ease both; opacity: 0; }
+.panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 0.68rem; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.panel-footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; flex-shrink: 0; }
+
+/* ── Buttons ── */
+.btn { padding: 9px 18px; border: none; border-radius: 8px; font-family: var(--mono); font-size: 0.78rem; font-weight: 700; cursor: pointer; transition: all 0.18s; letter-spacing: 0.4px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover { background: #33eaff; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,229,255,0.3); }
+.btn-primary:active { transform: translateY(0); }
+.btn-live { background: var(--live); color: #000; }
+.btn-live:hover { background: #c4b5fd; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(167,139,250,0.35); }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border2); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-sm { padding: 7px 14px; font-size: 0.72rem; }
+.btn-xs { padding: 5px 10px; font-size: 0.67rem; border-radius: 6px; }
+.btn-danger { color: var(--danger) !important; }
+.btn-danger:hover { border-color: var(--danger) !important; color: var(--danger) !important; }
+
+/* ── Send ── */
+textarea { width: 100%; min-height: 180px; background: transparent; border: none; outline: none; padding: 18px; font-family: var(--mono); font-size: 0.88rem; color: var(--text); resize: vertical; line-height: 1.7; }
+textarea::placeholder { color: var(--muted); }
+.char-count { font-size: 0.7rem; color: var(--muted); }
+.char-count.warn { color: var(--warn); }
+.char-count.danger { color: var(--accent2); }
+.result-box { margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; display: none; }
+.result-box.show { display: block; animation: fadeIn 0.4s ease both; }
+.result-inner { display: grid; grid-template-columns: 1fr 160px; }
+@media (max-width: 560px) { .result-inner { grid-template-columns: 1fr; } }
+.url-section { padding: 16px 18px; border-right: 1px solid var(--border); }
+@media (max-width: 560px) { .url-section { border-right: none; border-bottom: 1px solid var(--border); } }
+.result-label { font-size: 0.62rem; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+.url-display { font-size: 0.72rem; color: var(--text); word-break: break-all; line-height: 1.6; max-height: 70px; overflow-y: auto; margin-bottom: 12px; padding: 9px 10px; background: rgba(0,229,255,0.04); border-radius: 6px; border: 1px solid rgba(0,229,255,0.1); }
+.url-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.qr-section { padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+#qr-code { background: white; padding: 8px; border-radius: 7px; }
+#qr-code canvas, #qr-code img { display: block; }
+.qr-hint { font-size: 0.62rem; color: var(--muted); text-align: center; max-width: 120px; line-height: 1.5; }
+.send-panel.hidden { display: none; }
+
+/* ── Receive ── */
+.receive-panel { display: none; }
+.receive-panel.active { display: block; }
+.receive-input-row { display: flex; gap: 10px; padding: 14px 16px; align-items: stretch; flex-wrap: wrap; }
+.paste-wrap { flex: 1; min-width: 180px; }
+.paste-wrap input { width: 100%; padding: 9px 14px; background: var(--bg); border: 1px solid var(--border2); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 0.78rem; outline: none; transition: border-color 0.2s; height: 100%; min-height: 38px; }
+.paste-wrap input:focus { border-color: var(--accent); }
+.paste-wrap input::placeholder { color: var(--muted); }
+#scanner-section { display: none; border-top: 1px solid var(--border); }
+#scanner-section.active { display: block; animation: fadeIn 0.3s ease both; }
+.scanner-video-wrap { position: relative; background: #000; overflow: hidden; max-height: 300px; display: flex; align-items: center; justify-content: center; }
+#scanner-video { width: 100%; max-height: 300px; object-fit: cover; display: block; }
+#scanner-canvas { display: none; }
+.scanner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.scanner-frame { width: 200px; height: 200px; position: relative; }
+.scanner-frame::before { content: ''; position: absolute; top: 0; left: 0; width: 28px; height: 28px; border-top: 3px solid var(--accent); border-left: 3px solid var(--accent); border-radius: 4px 0 0 0; }
+.scanner-frame::after  { content: ''; position: absolute; top: 0; right: 0; width: 28px; height: 28px; border-top: 3px solid var(--accent); border-right: 3px solid var(--accent); border-radius: 0 4px 0 0; }
+.scanner-frame span::before { content: ''; position: absolute; bottom: 0; left: 0; width: 28px; height: 28px; border-bottom: 3px solid var(--accent); border-left: 3px solid var(--accent); border-radius: 0 0 0 4px; }
+.scanner-frame span::after  { content: ''; position: absolute; bottom: 0; right: 0; width: 28px; height: 28px; border-bottom: 3px solid var(--accent); border-right: 3px solid var(--accent); border-radius: 0 0 4px 0; }
+.scan-line { position: absolute; left: 5%; right: 5%; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: scanMove 2s linear infinite; box-shadow: 0 0 10px var(--accent); }
+@keyframes scanMove { 0% { top: 8%; } 100% { top: 92%; } }
+.scanner-status-bar { padding: 10px 16px; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); }
+.scanner-status-txt { font-size: 0.7rem; color: var(--accent); letter-spacing: 1px; }
+.scanner-error-box { padding: 12px 16px; font-size: 0.78rem; color: var(--danger); background: rgba(255,77,109,0.08); border-top: 1px solid rgba(255,77,109,0.2); display: none; line-height: 1.6; }
+.scanner-error-box.show { display: block; }
+.received-wrap { margin-top: 16px; animation: fadeIn 0.35s ease both; }
+.received-wrap .panel { animation: none; opacity: 1; }
+.received-text-container { position: relative; overflow: hidden; }
+.received-text-container.is-collapsed { max-height: 140px; }
+.received-text-container.is-expanded { max-height: 440px; overflow-y: auto; }
+.received-text-container.is-collapsed::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 44px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
+.received-text { padding: 16px 18px; font-size: 0.86rem; line-height: 1.78; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.expand-btn { display: block; width: 100%; padding: 10px; text-align: center; font-size: 0.7rem; letter-spacing: 1px; color: var(--accent); cursor: pointer; background: transparent; border: none; border-top: 1px solid var(--border); font-family: var(--mono); transition: background 0.2s; }
+.expand-btn:hover { background: rgba(0,229,255,0.05); }
+.source-badge { font-size: 0.6rem; padding: 2px 8px; border-radius: 100px; background: rgba(0,229,255,0.1); color: var(--accent); letter-spacing: 1px; text-transform: uppercase; }
+.source-badge.qr { background: rgba(255,60,172,0.1); color: var(--accent2); }
+.source-badge.paste { background: rgba(255,179,71,0.1); color: var(--warn); }
+.source-badge.live { background: rgba(167,139,250,0.15); color: var(--live); }
+.history-section { margin-top: 22px; animation: fadeIn 0.4s ease both; }
+.history-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 2px; }
+.history-title-area { display: flex; align-items: center; gap: 6px; }
+.history-title { font-size: 0.64rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); }
+.history-badge { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #000; font-size: 0.6rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.history-expires { font-size: 0.6rem; color: var(--muted); }
+.history-list { display: flex; flex-direction: column; gap: 10px; }
+.history-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: border-color 0.2s; }
+.history-item:hover { border-color: var(--border2); }
+.history-item-hdr { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.history-time { font-size: 0.63rem; color: var(--muted); }
+.history-chars { font-size: 0.63rem; color: var(--muted); }
+.history-acts { display: flex; gap: 5px; margin-left: auto; }
+.history-tc { position: relative; overflow: hidden; }
+.history-tc.h-col { max-height: 80px; }
+.history-tc.h-exp { max-height: 280px; overflow-y: auto; }
+.history-tc.h-col::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 34px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
+.history-text { padding: 11px 14px; font-size: 0.8rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.h-expand-btn { display: block; width: 100%; padding: 7px; text-align: center; font-size: 0.64rem; letter-spacing: 1px; color: var(--muted); cursor: pointer; background: transparent; border: none; border-top: 1px solid var(--border); font-family: var(--mono); transition: all 0.2s; }
+.h-expand-btn:hover { color: var(--accent); background: rgba(0,229,255,0.04); }
+
+/* ═══════════════════════════════
+   LIVE BEAM PANEL
+═══════════════════════════════ */
+.live-panel { display: none; }
+.live-panel.active { display: block; }
+
+/* Connection status bar */
+.live-status-bar {
+  padding: 10px 18px; display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid var(--border); transition: background 0.4s;
+}
+.live-status-bar.waiting { background: rgba(255,179,71,0.04); }
+.live-status-bar.connected { background: rgba(0,255,157,0.05); }
+.live-status-bar.error { background: rgba(255,77,109,0.05); }
+.live-status-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: all 0.3s;
+}
+.live-status-dot.waiting { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: pulse 1.5s infinite; }
+.live-status-dot.connected { background: var(--success); box-shadow: 0 0 10px var(--success); animation: pulse 3s infinite; }
+.live-status-dot.error { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: none; }
+.live-status-txt { font-size: 0.72rem; color: var(--muted); flex: 1; }
+.live-status-txt.waiting { color: var(--warn); }
+.live-status-txt.connected { color: var(--success); }
+.live-status-txt.error { color: var(--danger); }
+
+/* Room code block */
+.code-block {
+  margin: 20px 18px; padding: 20px;
+  background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.2);
+  border-radius: 14px; text-align: center;
+}
+.code-label { font-size: 0.62rem; letter-spacing: 2px; text-transform: uppercase; color: var(--live); margin-bottom: 10px; }
+.code-display {
+  font-family: var(--sans); font-size: 2.6rem; font-weight: 800; letter-spacing: 6px;
+  color: var(--text); margin-bottom: 12px; cursor: pointer; transition: color 0.2s;
+  user-select: all;
+}
+.code-display:hover { color: var(--live); }
+.code-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+/* Join section */
+.join-section {
+  margin: 0 18px 18px; padding: 16px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 12px;
+}
+.join-label { font-size: 0.62rem; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.join-row { display: flex; gap: 10px; align-items: center; }
+.code-input {
+  flex: 1; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 8px; color: var(--text); font-family: var(--sans); font-size: 1.2rem; font-weight: 700;
+  letter-spacing: 4px; text-transform: uppercase; outline: none; text-align: center;
+  transition: border-color 0.2s;
+}
+.code-input:focus { border-color: var(--live); }
+.code-input::placeholder { font-size: 0.75rem; letter-spacing: 1px; color: var(--muted); font-family: var(--mono); font-weight: 400; }
+
+/* Live textarea */
+.live-textarea-wrap { padding: 14px 18px; border-top: 1px solid var(--border); }
+.live-textarea-wrap textarea { min-height: 100px; border: 1px solid var(--border2); border-radius: 10px; padding: 14px; background: var(--bg); }
+.live-textarea-wrap textarea:focus { border-color: var(--live); outline: none; }
+.live-beam-footer { padding: 10px 18px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+
+/* Live received stream */
+.live-stream { margin-top: 16px; }
+.live-stream .panel { animation: none; opacity: 1; }
+.live-stream-list { max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+.live-msg {
+  padding: 14px 18px; border-bottom: 1px solid var(--border); animation: fadeIn 0.3s ease both;
+  position: relative;
+}
+.live-msg:last-child { border-bottom: none; }
+.live-msg-text { font-size: 0.86rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.live-msg-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.live-msg-time { font-size: 0.62rem; color: var(--muted); }
+.live-msg-copy { position: absolute; top: 12px; right: 14px; }
+
+/* ping animation on new message */
+@keyframes livePing {
+  0% { box-shadow: 0 0 0 0 rgba(167,139,250,0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(167,139,250,0); }
+  100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); }
+}
+.live-msg.new-msg { animation: livePing 0.6s ease, fadeIn 0.3s ease; }
+
+.live-empty {
+  padding: 32px 18px; text-align: center; font-size: 0.78rem; color: var(--muted); line-height: 1.8;
+}
+.live-empty-icon { font-size: 2rem; margin-bottom: 8px; }
+
+/* Peer error notice */
+.peer-error-notice {
+  margin: 0 18px 18px; padding: 12px 14px;
+  background: rgba(255,77,109,0.06); border: 1px solid rgba(255,77,109,0.15);
+  border-radius: 10px; font-size: 0.75rem; color: var(--danger); line-height: 1.6; display: none;
+}
+.peer-error-notice.show { display: block; animation: fadeIn 0.3s ease both; }
+
+/* Live Beam glow effect when connected */
+.live-panel.connected .panel { border-color: rgba(167,139,250,0.3); box-shadow: 0 0 30px rgba(167,139,250,0.06); }
+
+/* How it works */
+.how { margin-top: 38px; border-top: 1px solid var(--border); padding-top: 26px; animation: slideDown 0.6s 0.3s ease both; opacity: 0; }
+.how-title { font-size: 0.64rem; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 500px) { .steps { grid-template-columns: 1fr; } }
+.step { padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.step-num { font-size: 1.3rem; color: var(--accent); font-weight: 700; font-family: var(--sans); margin-bottom: 5px; }
+.step p { font-size: 0.7rem; color: var(--muted); line-height: 1.6; }
+
+/* Toast */
+.toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--success); color: #000; padding: 10px 22px; border-radius: 100px; font-size: 0.78rem; font-weight: 700; z-index: 9999; transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1); pointer-events: none; white-space: nowrap; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.err { background: var(--danger); color: #fff; }
+.toast.live-t { background: var(--live); color: #000; }
+
+/* Drag overlay */
+.drag-overlay { position: fixed; inset: 0; z-index: 9998; background: rgba(0,229,255,0.06); border: 3px dashed var(--accent); display: none; align-items: center; justify-content: center; font-family: var(--sans); font-size: 2rem; color: var(--accent); backdrop-filter: blur(4px); letter-spacing: -1px; font-weight: 800; }
+.drag-overlay.show { display: flex; }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+<div class="drag-overlay" id="drag-overlay">Drop text file to load ↓</div>
+
+<div class="container">
+  <header>
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Text<span>Beam</span></h1>
+      <div class="tagline">Serverless · Instant · Private</div>
+    </div>
+  </header>
+
+  <div class="no-server-badge"><span class="bdot"></span> No server · Text lives in the URL or beams P2P</div>
+
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="btn-send" onclick="switchMode('send')">⬆ Send</button>
+    <button class="mode-btn" id="btn-receive" onclick="switchMode('receive')">⬇ Receive</button>
+    <button class="mode-btn" id="btn-live" onclick="switchMode('live')">⚡ Live Beam</button>
+  </div>
+
+  <!-- ══════════════ SEND PANEL ══════════════ -->
+  <div class="send-panel" id="send-panel">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="dot"></div>
+        Type or paste your text
+        <span style="margin-left:auto;font-size:0.62rem;color:var(--muted)" id="word-count"></span>
+      </div>
+      <textarea id="text-input" placeholder="Paste anything — links, notes, passwords, code, emoji 🚀, Arabic, CJK… All Unicode supported." oninput="updateCount()"></textarea>
+      <div class="panel-footer">
+        <span class="char-count" id="char-count">0 chars</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="clearAll()">Clear</button>
+          <button class="btn btn-primary" onclick="generate()" title="Ctrl+Enter">Generate Link ↗</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="result-box" id="result-box">
+      <div class="panel-header">
+        <div class="dot" style="background:var(--success);box-shadow:0 0 8px var(--success)"></div>
+        Shareable link ready
+      </div>
+      <div class="result-inner">
+        <div class="url-section">
+          <div class="result-label">Link</div>
+          <div class="url-display" id="url-display"></div>
+          <div class="url-actions">
+            <button class="btn btn-primary btn-sm" onclick="copyLink()">Copy Link</button>
+            <button class="btn btn-ghost btn-sm" id="web-share-btn" onclick="webShare()" style="display:none">📤 Share</button>
+            <button class="btn btn-ghost btn-sm" onclick="openLink()">Open ↗</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadSendTxt()">↓ .txt</button>
+          </div>
+        </div>
+        <div class="qr-section">
+          <div class="result-label" style="align-self:flex-start">QR Code</div>
+          <div id="qr-code"></div>
+          <div class="qr-hint">Scan with phone camera to receive instantly</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ RECEIVE PANEL ══════════════ -->
+  <div class="receive-panel" id="receive-panel">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="dot" style="background:var(--accent2);box-shadow:0 0 8px var(--accent2)"></div>
+        Receive text
+        <button class="btn btn-ghost btn-xs" id="clipboard-btn" onclick="checkClipboard()" style="margin-left:auto" title="Auto-detect TextBeam link in clipboard">📋 Check clipboard</button>
+      </div>
+      <div class="receive-input-row">
+        <button class="btn btn-ghost" id="scan-btn" onclick="toggleScanner()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/>
+          </svg>
+          Scan QR
+        </button>
+        <div class="paste-wrap">
+          <input id="paste-url" type="text" placeholder="Or paste a TextBeam link here…" oninput="onPasteInput(this.value)" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div id="scanner-section">
+        <div class="scanner-video-wrap">
+          <video id="scanner-video" playsinline muted></video>
+          <canvas id="scanner-canvas"></canvas>
+          <div class="scanner-overlay">
+            <div class="scanner-frame"><span></span><div class="scan-line"></div></div>
+          </div>
+        </div>
+        <div class="scanner-status-bar">
+          <span class="scanner-status-txt" id="scanner-status">Scanning for QR code…</span>
+          <button class="btn btn-ghost btn-sm" onclick="stopScanner()">⏹ Stop</button>
+        </div>
+      </div>
+      <div class="scanner-error-box" id="scanner-error"></div>
+    </div>
+
+    <div class="received-wrap" id="latest-received" style="display:none">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="dot" style="background:var(--success);box-shadow:0 0 8px var(--success)"></div>
+          Latest received
+          <span id="latest-src-badge" class="source-badge" style="margin-left:4px"></span>
+          <span style="margin-left:auto;font-size:0.62rem;color:var(--muted)" id="latest-time-lbl"></span>
+        </div>
+        <div class="received-text-container is-collapsed" id="latest-tc">
+          <div class="received-text" id="latest-txt"></div>
+        </div>
+        <button class="expand-btn" id="latest-exp-btn" onclick="toggleLatestExpand()" style="display:none">Show more ↓</button>
+        <div class="panel-footer">
+          <span class="char-count" id="latest-count"></span>
+          <div style="display:flex;gap:7px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="downloadLatest()">↓ Save</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyLatest()">Copy</button>
+            <button class="btn btn-primary btn-sm" onclick="editAndReshare()">Edit & Re-share</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="history-section" id="hist-section" style="display:none">
+      <div class="history-header">
+        <div class="history-title-area">
+          <span class="history-title">History</span>
+          <span class="history-badge" id="hist-badge">0</span>
+          <span class="history-expires">· auto-clears 24h</span>
+        </div>
+        <button class="btn btn-ghost btn-xs btn-danger" onclick="clearAllHistory()">Clear all</button>
+      </div>
+      <div class="history-list" id="hist-list"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════ LIVE BEAM PANEL ══════════════ -->
+  <div class="live-panel" id="live-panel">
+    <div class="panel" id="live-main-panel">
+      <div class="panel-header">
+        <div class="dot" style="background:var(--live);box-shadow:0 0 8px var(--live);animation:pulse 2s infinite"></div>
+        Live Beam — Real-time P2P
+        <span style="margin-left:auto;font-size:0.62rem;color:var(--muted)">WebRTC · no server</span>
+      </div>
+
+      <!-- Status bar -->
+      <div class="live-status-bar" id="live-status-bar">
+        <div class="live-status-dot" id="live-dot"></div>
+        <span class="live-status-txt" id="live-status-txt">Not connected</span>
+        <button class="btn btn-ghost btn-xs" id="live-disconnect-btn" onclick="liveDisconnect()" style="display:none">Disconnect</button>
+      </div>
+
+      <!-- My room code -->
+      <div class="code-block" id="code-block">
+        <div class="code-label">Your Room Code</div>
+        <div class="code-display" id="my-code-display" onclick="copyCode()" title="Click to copy">------</div>
+        <div class="code-actions">
+          <button class="btn btn-live btn-sm" id="host-btn" onclick="startHosting()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            Start Hosting
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="newCode()">🔄 New Code</button>
+        </div>
+      </div>
+
+      <!-- Peer init error -->
+      <div class="peer-error-notice" id="peer-error-notice"></div>
+
+      <!-- Send text section (only when connected as host) -->
+      <div class="live-textarea-wrap" id="live-send-wrap" style="display:none">
+        <div style="font-size:0.62rem;letter-spacing:2px;text-transform:uppercase;color:var(--live);margin-bottom:10px">Beam text to connected device</div>
+        <textarea id="live-textarea" placeholder="Type or paste text to beam instantly…" oninput="updateLiveCount()"></textarea>
+      </div>
+      <div class="live-beam-footer" id="live-beam-footer" style="display:none">
+        <span class="char-count" id="live-char-count">0 chars</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="clearLive()">Clear</button>
+          <button class="btn btn-live" onclick="beamNow()" id="beam-btn" title="Ctrl+Enter">⚡ Beam!</button>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="margin: 0 18px; border-top: 1px solid var(--border); padding-top: 16px;"></div>
+
+      <!-- Join section -->
+      <div class="join-section" id="join-section">
+        <div class="join-label">Join someone else's room</div>
+        <div class="join-row">
+          <input class="code-input" id="join-code-input" type="text" maxlength="8" placeholder="Enter code…"
+            oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+            onkeydown="if(event.key==='Enter')joinRoom()">
+          <button class="btn btn-ghost" id="join-btn" onclick="joinRoom()">Connect →</button>
+        </div>
+        <div style="margin-top:8px;font-size:0.67rem;color:var(--muted);line-height:1.5">
+          Ask the other person for their 6-character code. Works across any network, globally.
+        </div>
+      </div>
+    </div>
+
+    <!-- Live received messages -->
+    <div class="live-stream" id="live-stream" style="display:none">
+      <div class="panel" style="animation:none;opacity:1">
+        <div class="panel-header">
+          <div class="dot" style="background:var(--live);box-shadow:0 0 8px var(--live)"></div>
+          Received messages
+          <button class="btn btn-ghost btn-xs" style="margin-left:auto" onclick="clearLiveStream()">Clear</button>
+        </div>
+        <div class="live-stream-list" id="live-msg-list">
+          <div class="live-empty"><div class="live-empty-icon">⚡</div>Waiting for incoming text…<br>Ask the other person to beam!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="how">
+    <div class="how-title">How it works</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">01</div><p><strong style="color:var(--accent)">URL/QR:</strong> Generate a link or QR code. Text lives in the URL — zero servers.</p></div>
+      <div class="step"><div class="step-num">02</div><p><strong style="color:var(--accent2)">Receive:</strong> Open the link or scan QR. Paste a link, or click "Check clipboard" after copying.</p></div>
+      <div class="step"><div class="step-num">03</div><p><strong style="color:var(--live)">Live Beam:</strong> Share a 6-char code once. Text beams instantly P2P — no scanning ever again.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════
+   ROBUST UTF-8 ENCODING — handles all Unicode
+═══════════════════════════════════════════ */
+function tbEncode(str) {
+  try {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    const CHUNK = 8192;
+    for (let i = 0; i < bytes.length; i += CHUNK)
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  } catch (e) {
+    try { return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+    catch (e2) { throw new Error('Encoding failed'); }
+  }
+}
+
+function tbDecode(encoded) {
+  if (!encoded || typeof encoded !== 'string') return null;
+  encoded = encoded.trim();
+  const pad = s => { const r = s.length%4; return r===2?s+'==':r===3?s+'=':s; };
+  const tryB64 = s => { let b=pad(s.replace(/-/g,'+').replace(/_/g,'/')); return atob(b); };
+
+  // Primary: TextDecoder (handles all Unicode properly)
+  try {
+    const binary = tryB64(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+    return new TextDecoder('utf-8',{fatal:false}).decode(bytes);
+  } catch(e) {}
+
+  // Fallback: legacy percent-encoding
+  try { return decodeURIComponent(atob(pad(encoded)).split('').map(c=>'%'+c.charCodeAt(0).toString(16).padStart(2,'0')).join('')); }
+  catch(e) {}
+
+  // Last resort: raw atob
+  try { return atob(encoded); } catch(e) {}
+  return null;
+}
+
+function extractPayload(raw) {
+  if (!raw) return null;
+  raw = raw.trim();
+  let m;
+  m = raw.match(/[#]t=([A-Za-z0-9\-_+/=]+)/); if (m) return m[1];
+  m = raw.match(/[?&]t=([A-Za-z0-9\-_+/=]+)/); if (m) return m[1];
+  if (/^[A-Za-z0-9\-_+/]{8,}={0,2}$/.test(raw) && !raw.includes(' ')) {
+    const a = tbDecode(raw); if (a !== null && a.length > 0) return raw;
+  }
+  return null;
+}
+
+/* ═══════════════════════════════════════════
+   HISTORY
+═══════════════════════════════════════════ */
+const HIST_KEY='textbeam_hist_v2', MAX_HIST=5, HIST_TTL=864e5;
+const hMap={};
+
+function histLoad() {
+  try { const r=JSON.parse(localStorage.getItem(HIST_KEY)||'[]'); return Array.isArray(r)?r.filter(i=>i&&Date.now()-i.timestamp<HIST_TTL):[];} catch(e){return[];}
+}
+function histSave(a) { try{localStorage.setItem(HIST_KEY,JSON.stringify(a.slice(0,MAX_HIST)));}catch(e){} }
+function histAdd(text,source) {
+  const items=histLoad();
+  if(items[0]&&items[0].text===text&&Date.now()-items[0].timestamp<5000) return items[0].id;
+  const id='tb'+Date.now()+Math.random().toString(36).slice(2,6);
+  histSave([{id,text,timestamp:Date.now(),source:source||'url'},...items]);
+  hMap[id]=text; return id;
+}
+function histDelete(id) { histSave(histLoad().filter(i=>i.id!==id)); delete hMap[id]; renderHistory(); }
+function clearAllHistory() { if(!confirm('Delete all history?'))return; try{localStorage.removeItem(HIST_KEY);}catch(e){} Object.keys(hMap).forEach(k=>delete hMap[k]); renderHistory(); toast('🗑️ History cleared'); }
+function copyHistItem(id) { doClipboard(hMap[id],'✅ Copied!'); }
+function useHistItem(id) { const t=hMap[id]; if(!t)return; showLatest(t,histLoad().find(i=>i.id===id)?.source||'url'); toast('📋 Restored'); }
+
+function renderHistory() {
+  const items=histLoad(), section=document.getElementById('hist-section'), list=document.getElementById('hist-list'), badge=document.getElementById('hist-badge');
+  if(!items.length){section.style.display='none';return;}
+  section.style.display='block'; badge.textContent=items.length;
+  items.forEach(i=>{hMap[i.id]=i.text;});
+  list.innerHTML=items.map(item=>{
+    const age=formatAge(Date.now()-item.timestamp), src=item.source||'url';
+    const srcLbl=src==='qr'?'QR':src==='paste'?'Paste':src==='live'?'Live':'URL';
+    const srcCls=src==='qr'?' qr':src==='paste'?' paste':src==='live'?' live':'';
+    const long=item.text.length>260;
+    return `<div class="history-item"><div class="history-item-hdr"><span class="source-badge${srcCls}">${srcLbl}</span><span class="history-time">${age}</span><span class="history-chars">${item.text.length.toLocaleString()} chars</span><div class="history-acts"><button class="btn btn-ghost btn-xs" onclick="copyHistItem('${esc(item.id)}')">Copy</button><button class="btn btn-ghost btn-xs" onclick="useHistItem('${esc(item.id)}')">↑ Use</button><button class="btn btn-ghost btn-xs btn-danger" onclick="histDelete('${esc(item.id)}')">✕</button></div></div><div class="history-tc h-col" id="htc-${esc(item.id)}"><div class="history-text">${escHtml(item.text)}</div></div>${long?`<button class="h-expand-btn" id="heb-${esc(item.id)}" onclick="toggleHistExpand('${esc(item.id)}')">Show more ↓</button>`:''}</div>`;
+  }).join('');
+}
+
+function toggleHistExpand(id) {
+  const tc=document.getElementById('htc-'+id), btn=document.getElementById('heb-'+id);
+  if(!tc||!btn) return;
+  const c=tc.classList.contains('h-col');
+  tc.classList.toggle('h-col',!c); tc.classList.toggle('h-exp',c);
+  btn.textContent=c?'Show less ↑':'Show more ↓';
+}
+
+/* ═══════════════════════════════════════════
+   RECEIVE — latest text display
+═══════════════════════════════════════════ */
+let latestText='', latestExpanded=false;
+
+function showLatest(text, source) {
+  latestText=text; latestExpanded=false;
+  document.getElementById('latest-txt').textContent=text;
+  const srcLbl=source==='qr'?'QR':source==='paste'?'Paste':source==='live'?'Live':'URL';
+  const srcCls=source==='qr'?' qr':source==='paste'?' paste':source==='live'?' live':'';
+  const b=document.getElementById('latest-src-badge'); b.textContent=srcLbl; b.className='source-badge'+srcCls;
+  document.getElementById('latest-time-lbl').textContent='just now';
+  const wc=text.trim().split(/\s+/).filter(Boolean).length;
+  document.getElementById('latest-count').textContent=`${text.length.toLocaleString()} chars · ${wc.toLocaleString()} words`;
+  const tc=document.getElementById('latest-tc'), expBtn=document.getElementById('latest-exp-btn');
+  const needsExpand=text.length>200||(text.match(/\n/g)||[]).length>4;
+  tc.className='received-text-container '+(needsExpand?'is-collapsed':'');
+  expBtn.style.display=needsExpand?'block':'none'; expBtn.textContent='Show more ↓';
+  document.getElementById('latest-received').style.display='block';
+}
+
+function toggleLatestExpand() {
+  latestExpanded=!latestExpanded;
+  document.getElementById('latest-tc').className='received-text-container '+(latestExpanded?'is-expanded':'is-collapsed');
+  document.getElementById('latest-exp-btn').textContent=latestExpanded?'Show less ↑':'Show more ↓';
+}
+
+function receiveEncoded(encoded, source) {
+  const text=tbDecode(encoded);
+  if(text===null){toast('❌ Could not decode this link',true);return false;}
+  showLatest(text,source); histAdd(text,source); renderHistory(); return true;
+}
+
+function onPasteInput(val) {
+  if(!val.trim())return;
+  const p=extractPayload(val);
+  if(p){ receiveEncoded(p,'paste'); setTimeout(()=>{const e=document.getElementById('paste-url');if(e)e.value='';},700); }
+}
+
+function copyLatest() { doClipboard(latestText,'✅ Copied!'); }
+function downloadLatest() { if(latestText) saveFile(latestText,'textbeam-received.txt'); }
+function editAndReshare() {
+  if(!latestText)return;
+  document.getElementById('text-input').value=latestText; updateCount(); switchMode('send'); toast('✏️ Loaded — edit & generate!');
+}
+
+/* ═══════════════════════════════════════════
+   CLIPBOARD AUTO-DETECT
+═══════════════════════════════════════════ */
+async function checkClipboard() {
+  if(!navigator.clipboard?.readText) {
+    toast('📋 Clipboard API not available — paste manually below', true); return;
+  }
+  try {
+    const text = await navigator.clipboard.readText();
+    if(!text.trim()) { toast('📋 Clipboard is empty', true); return; }
+    const payload = extractPayload(text);
+    if(payload) {
+      receiveEncoded(payload,'paste');
+      toast('✅ Found & decoded TextBeam link!');
+    } else {
+      // Not a TextBeam URL — show as-is (useful for raw text)
+      showLatest(text,'paste'); histAdd(text,'paste'); renderHistory();
+      toast('📋 Text loaded from clipboard!');
+    }
+  } catch(e) {
+    if(e.name==='NotAllowedError') {
+      toast('📋 Clipboard permission denied — paste manually below', true);
+    } else {
+      toast('📋 Could not read clipboard', true);
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════
+   QR SCANNER
+═══════════════════════════════════════════ */
+let scanActive=false, videoStream=null, rafId=null;
+
+function toggleScanner() { scanActive?stopScanner():startScanner(); }
+
+async function startScanner() {
+  const errEl=document.getElementById('scanner-error');
+  errEl.textContent=''; errEl.classList.remove('show');
+  if(!navigator.mediaDevices?.getUserMedia) return scanErr('Camera API unavailable. Use Chrome/Safari over HTTPS.');
+  if(typeof jsQR==='undefined') return scanErr('QR library failed to load. Refresh the page.');
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}})
+      .catch(()=>navigator.mediaDevices.getUserMedia({video:true}));
+    videoStream=stream; scanActive=true;
+    const video=document.getElementById('scanner-video');
+    video.srcObject=stream; video.play().catch(()=>{});
+    document.getElementById('scanner-section').classList.add('active');
+    const btn=document.getElementById('scan-btn');
+    btn.innerHTML=`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg> Stop`;
+    btn.style.borderColor='var(--accent2)'; btn.style.color='var(--accent2)';
+    video.addEventListener('loadedmetadata',()=>{rafId=requestAnimationFrame(scanFrame);},{once:true});
+    setTimeout(()=>{if(scanActive&&!rafId) rafId=requestAnimationFrame(scanFrame);},1000);
+  } catch(err) {
+    scanActive=false;
+    if(err.name==='NotAllowedError') scanErr('📷 Camera access denied. Allow permission in browser settings.');
+    else if(err.name==='NotFoundError') scanErr('No camera found on this device.');
+    else if(err.name==='NotReadableError') scanErr('Camera busy. Close other apps using it and try again.');
+    else scanErr('Camera error: '+(err.message||err.name));
+  }
+}
+
+function scanFrame() {
+  if(!scanActive)return;
+  const video=document.getElementById('scanner-video'), canvas=document.getElementById('scanner-canvas');
+  if(video.readyState>=2&&video.videoWidth>0){
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(video,0,0);
+    try {
+      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+      if(code?.data){
+        stopScanner();
+        const raw=code.data.trim(), p=extractPayload(raw);
+        if(p){if(receiveEncoded(p,'qr'))toast('✅ QR scanned!');}
+        else{showLatest(raw,'qr');histAdd(raw,'qr');renderHistory();toast('✅ QR scanned!');}
+        return;
+      }
+    } catch(e){}
+  }
+  rafId=requestAnimationFrame(scanFrame);
+}
+
+function stopScanner() {
+  scanActive=false;
+  if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null;}
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  const video=document.getElementById('scanner-video'); video.srcObject=null;
+  document.getElementById('scanner-section').classList.remove('active');
+  const btn=document.getElementById('scan-btn');
+  btn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg> Scan QR`;
+  btn.style.borderColor=''; btn.style.color='';
+}
+
+function scanErr(msg) {
+  const el=document.getElementById('scanner-error'); el.textContent=msg; el.classList.add('show');
+  document.getElementById('scanner-section').classList.remove('active');
+}
+
+/* ═══════════════════════════════════════════
+   SEND
+═══════════════════════════════════════════ */
+let currentURL='';
+
+function updateCount() {
+  const text=document.getElementById('text-input').value, len=text.length;
+  const wc=text.trim()?text.trim().split(/\s+/).filter(Boolean).length:0;
+  const el=document.getElementById('char-count');
+  el.textContent=len.toLocaleString()+' chars';
+  el.className='char-count'+(len>5000?' danger':len>2500?' warn':'');
+  document.getElementById('word-count').textContent=wc>0?wc.toLocaleString()+' words':'';
+}
+
+function generate() {
+  const text=document.getElementById('text-input').value;
+  if(!text.trim()){toast('✏️ Type some text first!',true);return;}
+  let encoded;
+  try{encoded=tbEncode(text);}catch(e){toast('❌ Encoding failed',true);return;}
+  const url=location.origin+location.pathname+'#t='+encoded;
+  currentURL=url;
+  if(url.length>8192) toast('⚠️ Very long URL — may not work in all apps');
+  document.getElementById('url-display').textContent=url;
+  document.getElementById('result-box').classList.add('show');
+  // Show Web Share API button if supported
+  if(navigator.share) document.getElementById('web-share-btn').style.display='inline-flex';
+  // QR
+  const qrEl=document.getElementById('qr-code'); qrEl.innerHTML='';
+  try{new QRCode(qrEl,{text:url,width:130,height:130,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});}
+  catch(e){qrEl.innerHTML='<div style="padding:8px;font-size:0.68rem;color:var(--muted);max-width:120px;line-height:1.5">Text too long for QR — share the link instead</div>';}
+  setTimeout(()=>document.getElementById('result-box').scrollIntoView({behavior:'smooth',block:'nearest'}),80);
+}
+
+async function webShare() {
+  if(!navigator.share){copyLink();return;}
+  const text=document.getElementById('text-input').value;
+  try {
+    await navigator.share({ title:'TextBeam', text:'Here\'s your text from TextBeam:', url:currentURL });
+  } catch(e) {
+    if(e.name!=='AbortError') copyLink(); // fallback if share fails (not user-cancelled)
+  }
+}
+
+function copyLink() { doClipboard(currentURL,'✅ Link copied!'); }
+function openLink() { if(currentURL) window.open(currentURL,'_blank'); }
+function clearAll() { document.getElementById('text-input').value=''; document.getElementById('result-box').classList.remove('show'); currentURL=''; updateCount(); }
+function downloadSendTxt() { const t=document.getElementById('text-input').value; if(!t.trim()){toast('Nothing to save',true);return;} saveFile(t,'textbeam.txt'); }
+
+/* ═══════════════════════════════════════════
+   ⚡ LIVE BEAM — WebRTC P2P via PeerJS
+═══════════════════════════════════════════ */
+const PEER_PFX='tb2-'; // prefix to avoid collisions on PeerJS cloud
+let peer=null, liveConn=null, myCode=null, liveRole='idle'; // 'idle'|'hosting'|'joining'|'connected'
+let liveStreamMsgs=[];
+
+// ── Code generation ──
+function genCode() {
+  const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no ambiguous chars (0/O, 1/I/L)
+  return Array.from({length:6},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+function loadMyCode() {
+  try { return localStorage.getItem('tb_live_code') || null; } catch(e) { return null; }
+}
+function saveMyCode(code) { try { localStorage.setItem('tb_live_code',code); } catch(e) {} }
+
+function newCode() {
+  if(liveRole==='hosting'||liveRole==='connected') {
+    if(!confirm('Generate a new code? This will disconnect any connected device.'))return;
+    liveDisconnect();
+  }
+  myCode=genCode(); saveMyCode(myCode);
+  showMyCode(myCode);
+  toast('🔄 New code generated!');
+}
+
+function showMyCode(code) {
+  // Display as "ABC DEF" for readability
+  const display=code.slice(0,3)+' '+code.slice(3);
+  document.getElementById('my-code-display').textContent=display;
+}
+
+function copyCode() {
+  if(myCode) doClipboard(myCode,'✅ Code copied!');
+}
+
+// ── Hosting ──
+function startHosting() {
+  if(!window.Peer){showPeerError('PeerJS library failed to load. Check your internet connection.');return;}
+  if(peer) { peer.destroy(); peer=null; liveConn=null; }
+
+  setLiveStatus('waiting','Hosting · waiting for connection…');
+  document.getElementById('host-btn').disabled=true;
+  document.getElementById('host-btn').textContent='Hosting…';
+
+  const peerId=PEER_PFX+myCode.toLowerCase();
+
+  try {
+    peer=new Peer(peerId);
+  } catch(e) {
+    showPeerError('Could not create peer: '+e.message); resetHostBtn(); return;
+  }
+
+  peer.on('open', ()=>{
+    liveRole='hosting';
+    setLiveStatus('waiting','● Hosting · code: '+myCode.slice(0,3)+' '+myCode.slice(3)+' · waiting…');
+  });
+
+  peer.on('connection', conn=>{
+    // Accept the newest connection
+    if(liveConn) { liveConn.close(); }
+    liveConn=conn; liveRole='connected';
+    conn.on('open',()=>{
+      setLiveStatus('connected','● Connected! Beam text below ↓');
+      showLiveSendUI(true);
+      document.getElementById('live-stream').style.display='block';
+      toast('⚡ Device connected!','live');
+    });
+    conn.on('data', data=>{
+      // Receive ACK or text from joiner if they send back
+      if(data?.type==='text') appendLiveMsg(data.text,data.ts||Date.now());
+    });
+    conn.on('close',()=>{
+      liveConn=null; liveRole='hosting';
+      setLiveStatus('waiting','● Hosting · device disconnected · waiting…');
+      showLiveSendUI(false);
+      toast('⚠️ Device disconnected');
+    });
+    conn.on('error',e=>{ setLiveStatus('error','Connection error: '+e.message); });
+  });
+
+  peer.on('error', err=>{
+    if(err.type==='unavailable-id'){
+      // Code taken by another host — generate a new one silently
+      myCode=genCode(); saveMyCode(myCode); showMyCode(myCode);
+      showPeerError('Code was taken — a new code was generated. Try hosting again.');
+    } else if(err.type==='network'||err.type==='server-error') {
+      showPeerError('Cannot reach the P2P signaling server. Check your internet connection and try again.\n\nNote: Live Beam requires an internet connection for the initial handshake (but not for data transfer).');
+    } else {
+      showPeerError('Peer error ('+err.type+'): '+(err.message||'Unknown error'));
+    }
+    resetHostBtn(); liveRole='idle';
+  });
+
+  peer.on('disconnected',()=>{ if(peer&&!peer.destroyed) peer.reconnect(); });
+}
+
+function showLiveSendUI(show) {
+  document.getElementById('live-send-wrap').style.display=show?'block':'none';
+  document.getElementById('live-beam-footer').style.display=show?'flex':'none';
+  document.getElementById('live-disconnect-btn').style.display=show?'inline-flex':'none';
+}
+
+function resetHostBtn() {
+  const btn=document.getElementById('host-btn');
+  btn.disabled=false;
+  btn.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> Start Hosting`;
+}
+
+// ── Joining ──
+function joinRoom() {
+  const raw=document.getElementById('join-code-input').value.trim().replace(/\s/g,'').toUpperCase();
+  if(raw.length<4){toast('⚠️ Enter a valid room code',true);return;}
+  if(!window.Peer){showPeerError('PeerJS library failed to load.');return;}
+
+  const targetId=PEER_PFX+raw.toLowerCase();
+  if(peer){peer.destroy();peer=null;liveConn=null;}
+
+  liveRole='joining';
+  setLiveStatus('waiting','Connecting to room '+raw+'…');
+  document.getElementById('join-btn').disabled=true; document.getElementById('join-btn').textContent='Connecting…';
+
+  try { peer=new Peer(); } catch(e){showPeerError('Could not create peer: '+e.message);resetJoinBtn();return;}
+
+  peer.on('open',()=>{
+    const conn=peer.connect(targetId,{reliable:true,serialization:'json'});
+    liveConn=conn;
+    conn.on('open',()=>{
+      liveRole='connected';
+      setLiveStatus('connected','● Connected to '+raw+'! Waiting for text…');
+      document.getElementById('live-stream').style.display='block';
+      document.getElementById('live-disconnect-btn').style.display='inline-flex';
+      document.getElementById('join-section').style.display='none';
+      resetJoinBtn();
+      toast('⚡ Connected!','live');
+    });
+    conn.on('data',data=>{
+      if(data?.type==='text'){
+        appendLiveMsg(data.text,data.ts||Date.now());
+        showLatest(data.text,'live'); histAdd(data.text,'live'); renderHistory();
+        toast('⚡ Text beamed!','live');
+        // Switch to receive view if not already there
+        if(!document.getElementById('receive-panel').classList.contains('active')) {
+          // Stay in live panel but show notification
+        }
+      }
+    });
+    conn.on('close',()=>{
+      liveConn=null; liveRole='idle';
+      setLiveStatus('idle','Disconnected from '+raw);
+      document.getElementById('live-disconnect-btn').style.display='none';
+      document.getElementById('join-section').style.display='block';
+      toast('⚠️ Disconnected from room');
+    });
+    conn.on('error',e=>{setLiveStatus('error','Connection error');resetJoinBtn();liveRole='idle';});
+
+    // Timeout: if not open in 12s, assume peer not found
+    const timeout=setTimeout(()=>{
+      if(liveRole==='joining'){
+        showPeerError('Could not connect to room "'+raw+'". Make sure the code is correct and the other device is hosting.');
+        peer.destroy(); peer=null; liveConn=null; liveRole='idle'; resetJoinBtn();
+        setLiveStatus('idle','Connection timed out');
+      }
+    },12000);
+    conn.on('open',()=>clearTimeout(timeout));
+  });
+
+  peer.on('error',err=>{
+    if(err.type==='peer-unavailable') showPeerError('Room "'+raw+'" not found. Check the code and make sure the other device is hosting.');
+    else if(err.type==='network'||err.type==='server-error') showPeerError('Cannot reach the P2P server. Check your internet connection.');
+    else showPeerError('Could not connect: '+(err.message||err.type));
+    liveRole='idle'; resetJoinBtn(); setLiveStatus('idle','Connection failed');
+  });
+}
+
+function resetJoinBtn() {
+  document.getElementById('join-btn').disabled=false;
+  document.getElementById('join-btn').textContent='Connect →';
+}
+
+// ── Beam text ──
+function beamNow() {
+  const text=document.getElementById('live-textarea').value;
+  if(!text.trim()){toast('✏️ Type something to beam!',true);return;}
+  if(!liveConn||!liveConn.open){toast('⚠️ Not connected to any device',true);return;}
+  try {
+    liveConn.send({type:'text',text,ts:Date.now()});
+    toast('⚡ Beamed!','live');
+    appendLiveMsg(text,Date.now(),true); // show as sent
+    document.getElementById('live-textarea').value='';
+    updateLiveCount();
+  } catch(e) { toast('❌ Beam failed: '+e.message,true); }
+}
+
+function appendLiveMsg(text,ts,isSent) {
+  const list=document.getElementById('live-msg-list');
+  // Remove empty state
+  const empty=list.querySelector('.live-empty'); if(empty) empty.remove();
+
+  const msgId='msg'+Date.now()+Math.random().toString(36).slice(2,5);
+  const timeStr=new Date(ts||Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const dir=isSent?'→ Sent':'← Received';
+
+  const div=document.createElement('div');
+  div.className='live-msg new-msg'; div.id=msgId;
+  div.innerHTML=`<div class="live-msg-meta"><span class="source-badge live">${dir}</span><span class="live-msg-time">${timeStr}</span></div><div class="live-msg-text">${escHtml(text)}</div><button class="btn btn-ghost btn-xs live-msg-copy" onclick="doClipboard(document.getElementById('${msgId}').querySelector('.live-msg-text').textContent,'✅ Copied!')">Copy</button>`;
+  list.appendChild(div);
+  list.scrollTop=list.scrollHeight;
+
+  // Remove new-msg class after animation
+  setTimeout(()=>div.classList.remove('new-msg'),700);
+  liveStreamMsgs.push({text,ts,isSent});
+}
+
+function clearLiveStream() {
+  liveStreamMsgs=[];
+  document.getElementById('live-msg-list').innerHTML='<div class="live-empty"><div class="live-empty-icon">⚡</div>Waiting for incoming text…<br>Ask the other person to beam!</div>';
+}
+
+function updateLiveCount() {
+  const len=document.getElementById('live-textarea').value.length;
+  document.getElementById('live-char-count').textContent=len.toLocaleString()+' chars';
+}
+function clearLive() { document.getElementById('live-textarea').value=''; updateLiveCount(); }
+
+// ── Status helpers ──
+function setLiveStatus(state,msg) {
+  const bar=document.getElementById('live-status-bar');
+  const dot=document.getElementById('live-dot');
+  const txt=document.getElementById('live-status-txt');
+  bar.className='live-status-bar '+state;
+  dot.className='live-status-dot '+state;
+  txt.className='live-status-txt '+state;
+  txt.textContent=msg;
+}
+
+function liveDisconnect() {
+  if(peer){peer.destroy();peer=null;} liveConn=null; liveRole='idle';
+  setLiveStatus('idle','Disconnected');
+  showLiveSendUI(false);
+  document.getElementById('join-section').style.display='block';
+  document.getElementById('live-disconnect-btn').style.display='none';
+  resetHostBtn(); resetJoinBtn();
+  toast('Disconnected');
+}
+
+function showPeerError(msg) {
+  const el=document.getElementById('peer-error-notice');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),8000);
+}
+
+// ── Init Live panel ──
+function initLive() {
+  myCode=loadMyCode();
+  if(!myCode){ myCode=genCode(); saveMyCode(myCode); }
+  showMyCode(myCode);
+  setLiveStatus('idle','Not connected');
+}
+
+/* ═══════════════════════════════════════════
+   MODE TOGGLE
+═══════════════════════════════════════════ */
+function switchMode(mode) {
+  document.getElementById('send-panel').classList.toggle('hidden', mode!=='send');
+  document.getElementById('receive-panel').classList.toggle('active', mode==='receive');
+  document.getElementById('live-panel').classList.toggle('active', mode==='live');
+  document.getElementById('btn-send').classList.toggle('active', mode==='send');
+  document.getElementById('btn-send').classList.toggle('live-mode', false);
+  document.getElementById('btn-receive').classList.toggle('active', mode==='receive');
+  document.getElementById('btn-receive').classList.toggle('live-mode', false);
+  document.getElementById('btn-live').classList.toggle('active', mode==='live');
+  document.getElementById('btn-live').classList.toggle('live-mode', mode==='live');
+
+  if(mode!=='receive') stopScanner();
+  if(mode==='receive') renderHistory();
+  if(mode==='live') initLive();
+}
+
+/* ═══════════════════════════════════════════
+   UTILITIES
+═══════════════════════════════════════════ */
+function toast(msg, type) {
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='toast'+(type==='live'?' live-t':type===true?' err':'');
+  el.classList.add('show');
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+function doClipboard(text,msg) {
+  if(!text)return;
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(()=>toast(msg)).catch(()=>{legacyCopy(text);toast(msg);});
+  else{legacyCopy(text);toast(msg);}
+}
+
+function legacyCopy(text) {
+  const ta=Object.assign(document.createElement('textarea'),{value:text,style:'position:fixed;top:-9999px;left:-9999px;opacity:0'});
+  document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+}
+
+function saveFile(text,name) {
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),download:name});
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
+function esc(s) { return String(s).replace(/['"\\<>]/g,''); }
+function formatAge(ms) {
+  const s=Math.floor(ms/1000); if(s<60)return 'just now';
+  const m=Math.floor(s/60); if(m<60)return m+'m ago';
+  const h=Math.floor(m/60); if(h<24)return h+'h ago';
+  return Math.floor(h/24)+'d ago';
+}
+
+/* ═══════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+═══════════════════════════════════════════ */
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
+    e.preventDefault();
+    const mode=document.getElementById('btn-send').classList.contains('active')?'send':
+                document.getElementById('btn-live').classList.contains('active')?'live':'receive';
+    if(mode==='send') generate();
+    else if(mode==='live') beamNow();
+  }
+});
+
+/* ═══════════════════════════════════════════
+   DRAG & DROP text files
+═══════════════════════════════════════════ */
+let dragCount=0;
+document.addEventListener('dragenter',e=>{if([...e.dataTransfer.types].includes('Files')){dragCount++;document.getElementById('drag-overlay').classList.add('show');}});
+document.addEventListener('dragleave',()=>{dragCount--;if(dragCount<=0){dragCount=0;document.getElementById('drag-overlay').classList.remove('show');}});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{
+  e.preventDefault(); dragCount=0; document.getElementById('drag-overlay').classList.remove('show');
+  const file=e.dataTransfer.files?.[0]; if(!file)return;
+  const isText=file.type.startsWith('text/')||/\.(txt|md|csv|json|xml|html|css|js|ts|py|sh|log)$/i.test(file.name);
+  if(!isText){toast('⚠️ Only text files supported',true);return;}
+  const reader=new FileReader();
+  reader.onload=ev=>{switchMode('send');document.getElementById('text-input').value=ev.target.result;updateCount();toast('📄 File loaded!');};
+  reader.onerror=()=>toast('❌ Could not read file',true);
+  reader.readAsText(file);
+});
+
+/* ═══════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════ */
+(function init() {
+  // Check URL for encoded payload (opens receive mode automatically)
+  const payload=extractPayload(location.href);
+  if(payload) {
+    switchMode('receive');
+    const text=tbDecode(payload);
+    if(text!==null){showLatest(text,'url');histAdd(text,'url');}
+    else toast('❌ Could not decode this link',true);
+    try{history.replaceState(null,'',location.pathname);}catch(e){}
+  }
+
+  // Show Web Share button if supported by this browser
+  if(navigator.share) document.getElementById('web-share-btn').style.display='inline-flex';
+
+  renderHistory();
+
+  // Refresh time labels every 60s
+  setInterval(()=>{if(document.getElementById('receive-panel').classList.contains('active'))renderHistory();},60000);
+
+  // Clean up camera + peer connections on unload
+  window.addEventListener('beforeunload',()=>{stopScanner();if(peer&&!peer.destroyed)peer.destroy();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)stopScanner();});
+})();
+</script>
+</body>
+</html>
